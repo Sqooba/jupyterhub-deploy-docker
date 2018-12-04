@@ -47,14 +47,40 @@ c.DockerSpawner.debug = True
 c.JupyterHub.hub_ip = 'jupyterhub'
 c.JupyterHub.hub_port = 8080
 
-# TLS config
-c.JupyterHub.port = 443
-c.JupyterHub.ssl_key = os.environ['SSL_KEY']
-c.JupyterHub.ssl_cert = os.environ['SSL_CERT']
+# Authenticate users with LDAP
+c.JupyterHub.authenticator_class = 'ldapauthenticator.LDAPAuthenticator'
+c.LDAPAuthenticator.server_address = os.environ.get('AD_SERVER')
+c.LDAPAuthenticator.lookup_dn = True
+c.LDAPAuthenticator.lookup_dn_search_filter = '({login_attr}={login})'
+c.LDAPAuthenticator.lookup_dn_search_user = os.environ.get('AD_LOOKUP_SEARCH_USER')
+c.LDAPAuthenticator.lookup_dn_search_password = os.environ.get('AD_LOOKUP_SEARCH_PASSWORD')
+c.LDAPAuthenticator.user_search_base = os.environ.get('AD_SEARCH_BASE')
+c.LDAPAuthenticator.user_attribute = 'sAMAccountName'
+c.LDAPAuthenticator.lookup_dn_user_dn_attribute = 'cn'
+c.LDAPAuthenticator.escape_userdn = False
+c.LDAPAuthenticator.bind_dn_template = bind_dn_template = list()
+pwd = os.path.dirname(__file__)
+with open(os.path.join(pwd, 'ad_bind_dn_template')) as f:
+    for line in f:
+        if not line:
+            continue
+        parts = line.split()
+        # in case of newline at the end of ad_bind_dn_template file
+        if len(parts) >= 1:
+            bind_dn_template.append(parts[0])
 
-# Authenticate users with GitHub OAuth
-c.JupyterHub.authenticator_class = 'oauthenticator.GitHubOAuthenticator'
-c.GitHubOAuthenticator.oauth_callback_url = os.environ['OAUTH_CALLBACK_URL']
+if os.path.isfile('ad_allowed_groups'):
+    c.LDAPAuthenticator.allowed_groups = allowed_groups = list()
+    pwd = os.path.dirname(__file__)
+    with open(os.path.join(pwd, 'ad_allowed_groups')) as f:
+        for line in f:
+            if not line:
+                continue
+            parts = line.split()
+            # in case of newline at the end of allowed_groups file
+            if len(parts) >= 1:
+                allowed_groups.append(parts[0])
+
 
 # Persist hub data on volume mounted inside container
 data_dir = os.environ.get('DATA_VOLUME_CONTAINER', '/data')

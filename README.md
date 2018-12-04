@@ -1,11 +1,23 @@
+**[Changes to this fork](#changes-to-this-fork)** |
 **[Technical Overview](#technical-overview)** |
 **[Prerequisites](#prerequisites)** |
-**[Authenticator setup](#authenticator-setup)** |
+**[Run JupyterHub behind Apache HTTPD](#run-jupyterhub-behind-apache-httpd)** |
+**[LDAP Authenticator setup](#ldap-authenticator-setup)** |
 **[Build the JupyterHub Docker image](#build-the-jupyterhub-docker-image)** |
 **[Spawner: Prepare the Jupyter Notebook Image](#spawner-prepare-the-jupyter-notebook-image)** |
 **[Run JupyterHub](#run-jupyterhub)** |
 **[Behind the scenes](#behind-the-scenes)** |
 **[FAQ](#faq)**
+
+# Changes to this fork
+
+This fork of [jupyterhub/jupyterhub-deploy-docker](https://github.com/jupyterhub/jupyterhub-deploy-docker)
+adds the following to the original repo:
+
+* LDAP authentication with Active Directory using the [ldapauthenticator](https://github.com/jupyterhub/ldapauthenticator)
+* Use the [tensorflow-notebook](https://jupyter-docker-stacks.readthedocs.io/en/latest/using/selecting.html#jupyter-tensorflow-notebook)
+image as default single-user notebook image (instead of the minimal notebook image provided in the source repo)
+* Configurations for SSL/TLS termination for running JupyterHub behind a Apache httpd reverse proxy
 
 # jupyterhub-deploy-docker
 
@@ -40,8 +52,7 @@ Key components of this reference deployment are:
 * **Host**: Runs the [JupyterHub components](https://jupyterhub.readthedocs.org/en/latest/getting-started.html#overview)
   in a Docker container on the host.
 
-* **Authenticator**: Uses [OAuthenticator](https://github.com/jupyter/oauthenticator)
-  and [GitHub OAuth](https://developer.github.com/v3/oauth/) to
+* **Authenticator**: Uses [ldapauthenticator](https://github.com/jupyterhub/ldapauthenticator) with Active Directory configuration
   authenticate users.
 
 * **Spawner**:Uses [DockerSpawner](https://github.com/jupyter/dockerspawner)
@@ -77,72 +88,35 @@ required.
    docker ps
    ```
 
-### HTTPS and SSL/TLS certificate
+### Run JupyterHub behind Apache HTTPD
 
-This deployment configures JupyterHub to use HTTPS. You must provide a
-certificate and key file in the JupyterHub configuration. To configure:
-
-1. Obtain the domain name that you wish to use for JupyterHub, for
-   example, `myfavoritesite.com` or `jupiterplanet.org`.
-
-1. If you do not have an existing certificate and key, you can:
-
-   - obtain one from [Let's Encrypt](https://letsencrypt.org) using
-     the [certbot](https://certbot.eff.org) client,
-   - use the helper script in this repo's [letsencrypt example](examples/letsencrypt/README.md), or
-   - [create a self-signed certificate](https://jupyter-notebook.readthedocs.org/en/latest/public_server.html#using-ssl-for-encrypted-communication).
-
-1. Copy the certificate and key files to a
-   directory named `secrets` in this repository's root directory.  These will be
-   added to the JupyterHub Docker image at build time. For example, create a
-   `secrets` directory in the root of this repo and copy the certificate and
-   key files (`jupyterhub.crt` and `jupyterhub.key`) to this directory:
-
-   ```bash
-   mkdir -p secrets
-   cp jupyterhub.crt jupyterhub.key secrets/
-   ```
+This deployment configures JupyterHub to use HTTP and run behind an instance of Apache httpd
+as reverse proxy. You can use the file `jupyterhub.DOMAIN.TLD.conf` file
+as an example to configure your httpd VHOST.
 
 
-## Authenticator setup
+## LDAP Authenticator setup
 
-This deployment uses GitHub OAuth to authenticate users.
+This deployment uses LDAP authentication to authenticate users.
 
-It requires that you create and register a [GitHub OAuth application](https://github.com/settings/applications/new)
-by filling out a form on the GitHub site:
+You need to modify the file `secrets/ad.env` with the following parameters or export them as environment variables before
+starting the docker-compose:
 
-![GitHub OAuth application form](docs/oauth-form.png)
+* `AD_SERVER`: Address of the LDAP Server to contact. Just use a bare hostname or IP, without a port name or protocol prefix.
+* `AD_LOOKUP_SEARCH_USER`: Technical account username for user lookup
+* `AD_LOOKUP_SEARCH_PASSWORD`: Technical account password for user lookup
+* `AD_SEARCH_BASE`: Search base for looking up users in the directory
 
-In this form, you will specify the OAuth application's callback URL in
-this format: `https://<myhost.mydomain>/hub/oauth_callback`.
+You can then control the login permissions the following ways:
 
-After you submit the GitHub form, GitHub registers your OAuth application and
-assigns a unique Client ID and Client Secret. The Client Secret should be
-kept private.
-
-At JupyterHub's runtime, you must pass the GitHub OAuth Client ID, Client
-Secret and OAuth callback url. You can do this by either:
-
-- setting the `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, and
-  `OAUTH_CALLBACK_URL` environment variables when you run the
-  JupyterHub container, or
-- add them to an `oauth.env` file in the `secrets` directory of this repository.
-  You may need to create both the `secrets` directory and the `oauth.env` file.
-  For example, add the following lines in the `oauth.env` file:
-
-  `oauth.env` file
-  ```
-  GITHUB_CLIENT_ID=<github_client_id>
-  GITHUB_CLIENT_SECRET=<github_client_secret>
-  OAUTH_CALLBACK_URL=https://<myhost.mydomain>/hub/oauth_callback
-  ```
-
-  **Note:** The `oauth.env` file is a special file that Docker Compose uses
-  to lookup environment variables. If you choose to place the GitHub
-  OAuth application settings in this file, you should make sure that the
-  file remains private (be careful to not commit the `oauth.env` file with
-  these secrets to source control).
-
+* __Required__: Modify the `ad_bind_dn_template` file in this repo. This file contains the templates
+ used to generate the full dn for a user from the human readable username.
+ See the [ldapauthenticator documentation](https://github.com/jupyterhub/ldapauthenticator#ldapauthenticatorbind_dn_template)
+ for more info
+* __Required__: Whitelist users using their AD username and specify an admin user (see step 1 of [Build the JupyterHub Docker image](#build-the-jupyterhub-docker-image) below)
+* __Optional__: Whitelist LDAP groups whose members are allowed to log in by creating a file `ad_allowed_groups` containing
+ one full DN per line. See the [ldapauthenticator documentation](https://github.com/jupyterhub/ldapauthenticator#ldapauthenticatorallowed_groups)
+ for more info
 
 ## Build the JupyterHub Docker image
 

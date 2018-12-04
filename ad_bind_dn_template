@@ -1,0 +1,2 @@
+uid={username},ou=people,dc=wikimedia,dc=org
+uid={username},ou=developers,dc=wikimedia,dc=org
